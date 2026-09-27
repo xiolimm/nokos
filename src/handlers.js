@@ -1126,7 +1126,8 @@ async function callback(query) {
         "5. Tunggu admin memeriksa.",
         "6. Nokos bisa di Akses setelah disetujui."
       "",
-        " ketentuan: SYARAT KLAIM NOKOS",
+        
+      " ketentuan: SYARAT KLAIM NOKOS",
         "",
         "• Nokos hanya bisa diklaim jika udah ada minimal 4 Nokos.",  
       
