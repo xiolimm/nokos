@@ -11,7 +11,6 @@ const TASKS = [
     proofHint:
       "Kirim screenshot yang menunjukkan bahwa ketentuan task sudah selesai."
   },
-
   {
     id: "task_2",
     title: "⛏️ TASK 2 — MiningGRAM",
@@ -22,7 +21,6 @@ const TASKS = [
     proofHint:
       "Kirim screenshot halaman TASK/Mission yang memperlihatkan progres atau misi yang sudah selesai."
   },
-
   {
     id: "task_3",
     title: "🌱 TASK 3 — HiFami",
