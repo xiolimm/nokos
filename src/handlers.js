@@ -1125,7 +1125,11 @@ async function callback(query) {
         "4. Kirim bukti.",
         "5. Tunggu admin memeriksa.",
         "6. Nokos bisa di Akses setelah disetujui."
-        
+      "",
+        " ketentuan: SYARAT KLAIM NOKOS",
+        "",
+        "• Nokos hanya bisa diklaim jika udah ada minimal 4 Nokos.",  
+      
       ].join("\n"),
       {
         reply_markup:
