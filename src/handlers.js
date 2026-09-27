@@ -1031,9 +1031,9 @@ async function callback(query) {
     return sendMessage(
       chatId,
       [
-        "🎁 Reward",
+        "🎁 REWARD",
         "",
-        "Reward kamu: " +
+        "Saldo kamu: " +
           (user.balance || 0),
         "",
         "Nokos diberikan setelah task disetujui admin."
@@ -1117,14 +1117,14 @@ async function callback(query) {
     return sendMessage(
       chatId,
       [
-        "📖 PANDUAN",
+        "📖 READ FIRST",
         "",
         "1. Pilih task.",
         "2. Buka link task.",
         "3. Selesaikan ketentuan.",
         "4. Kirim bukti.",
         "5. Tunggu admin memeriksa.",
-        "6. Nokos bisa di Akses setelah disetujui ya ( nokos hanya bisa di klaim jika udah punya 4 nokos yaaaw(⁠ ⁠◜⁠‿⁠◝⁠ ⁠)⁠♡."
+        "6. Nokos bisa di Akses setelah disetujui."
         
       ].join("\n"),
       {
