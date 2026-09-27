@@ -8,7 +8,7 @@ function mainKeyboard(isAdmin = false) {
         callback_data: "menu_tasks"
       },
       {
-        text: "🎁 REWARD",
+        text: "🎁 CEK NOKOS",
         callback_data: "menu_reward"
       }
     ],
