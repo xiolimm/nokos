@@ -1125,6 +1125,7 @@ async function callback(query) {
         "4. Kirim bukti.",
         "5. Tunggu admin memeriksa.",
         "6. Nokos bisa di Akses setelah disetujui."
+        "7. note nokos hanya bisa di klaim, kalau udah 4 nokos!."
       ].join("\n"),
       {
         reply_markup:
