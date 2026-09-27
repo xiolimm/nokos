@@ -24,7 +24,7 @@ function mainKeyboard(isAdmin = false) {
     ],
     [
       {
-        text: "📖 READ FIRST",
+        text: "📖 PANDUAN",
         callback_data: "menu_read"
       }
     ],
