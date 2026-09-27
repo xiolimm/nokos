@@ -29,6 +29,7 @@ const {
 |--------------------------------------------------------------------------
 | SESSION
 |--------------------------------------------------------------------------
+| Catatan:
 | Session disimpan di memory server.
 | Untuk flow sederhana masih bisa digunakan.
 |--------------------------------------------------------------------------
@@ -69,10 +70,10 @@ function homeText(user) {
     "",
     "Halo, " + displayName(user) + " 👋",
     "",
-    "Selesaikan task yang tersedia untuk mendapatkan Nokos.",
+    "Selesaikan task yang tersedia untuk mendapatkan nokos.",
     "",
     "🆔 User ID: " + user.id,
-    "🎁 Saldo: " + (user.balance || 0) + " Nokos",
+    "🎁 Saldo: " + (user.balance || 0),
     "",
     "Pilih menu di bawah."
   ].join("\n");
@@ -166,7 +167,7 @@ async function showTask(chatId, user, taskId) {
   const text = [
     task.title,
     "",
-    "🎁 Reward: +" + task.reward + " Nokos",
+    "🎁 Reward: +" + task.reward,
     "",
     task.description,
     "",
@@ -174,9 +175,7 @@ async function showTask(chatId, user, taskId) {
     task.proofHint,
     "",
     "Status: " +
-      (done
-        ? "✅ Sudah selesai"
-        : "⏳ Belum selesai")
+      (done ? "✅ Sudah selesai" : "⏳ Belum selesai")
   ].join("\n");
 
   return sendMessage(
@@ -307,8 +306,7 @@ async function sendProofToAdmin(
         task
           ? task.reward
           : 0
-      ) +
-      " Nokos",
+      ),
     "📎 Tipe bukti: " +
       (
         submission.proof_type || "-"
@@ -649,8 +647,7 @@ async function adminPending(chatId) {
           task
             ? task.reward
             : 0
-        ) +
-        " Nokos",
+        ),
       "📎 Tipe: " +
         (
           row.proof_type || "-"
@@ -784,8 +781,7 @@ async function approveSubmission(
             task
               ? task.reward
               : 0
-          ) +
-          " Nokos",
+          ),
         "",
         "Reward sudah ditambahkan ke saldo kamu."
       ].join("\n")
@@ -887,8 +883,7 @@ async function showStats(chatId) {
       "❌ Rejected: " +
         stats.rejected,
       "🎁 Total reward: " +
-        stats.rewards +
-        " Nokos"
+        stats.rewards
     ].join("\n"),
     {
       reply_markup:
@@ -1012,8 +1007,7 @@ async function callback(query) {
           user.id,
         "",
         "🎁 Saldo: " +
-          (user.balance || 0) +
-          " Nokos"
+          (user.balance || 0)
       ].join("\n"),
       {
         reply_markup:
@@ -1040,29 +1034,13 @@ async function callback(query) {
         "🎁 REWARD",
         "",
         "Saldo kamu: " +
-          (user.balance || 0) +
-          " Nokos",
+          (user.balance || 0),
         "",
-        "Nokos diberikan setelah task disetujui admin.",
-        "",
-        " SYARAT KLAIM NOKOS!:",
-        "Minimal saldo untuk klaim: 4 Nokos.",
-        "",
-        (
-          Number(user.balance || 0) >= 4
-            ? "✅ Saldo kamu sudah mencapai minimal 4 Nokos."
-            : "⏳ Saldo kamu belum mencapai 4 Nokos."
-        )
+        "Nokos diberikan setelah task disetujui admin."
       ].join("\n"),
       {
         reply_markup:
           keyboard([
-            [
-              {
-                text: "📖 PANDUAN",
-                callback_data: "menu_read"
-              }
-            ],
             [
               {
                 text: "📋 TASK / MISI",
@@ -1106,7 +1084,7 @@ async function callback(query) {
           task.title +
           " (+" +
           task.reward +
-          " Nokos)"
+          ")"
         );
       });
 
@@ -1132,32 +1110,22 @@ async function callback(query) {
   }
 
   /*
-  | PANDUAN
+  | READ FIRST
   */
 
   if (data === "menu_read") {
     return sendMessage(
       chatId,
       [
-        "📖 PANDUAN",
+        "📖 READ FIRST",
         "",
-        "🎯 CARA MENGERJAKAN TASK",
-        "",
-        "1. Pilih task yang ingin kamu kerjakan.",
+        "1. Pilih task.",
         "2. Buka link task.",
-        "3. Selesaikan semua ketentuan task.",
-        "4. Kirim bukti sesuai instruksi.",
-        "5. Tunggu admin memeriksa bukti.",
-        "6. Jika disetujui, reward akan masuk ke saldo.",
-        "",
-        " SYARAT KLAIM NOKOS BY XIOLIM",
-        "",
-        "• Nokos hanya bisa diklaim jika sudah mencapai 4 Nokos.",
-        "• Pastikan task sudah diselesaikan sesuai ketentuan.",
-        "• Bukti harus jelas dan sesuai yaa.",
-        "• Nokos masuk setelah bukti disetujui admin.",
-        "",
-        "⚠️ Jangan mengirim bukti palsu atau bukti yang tidak sesuai."
+        "3. Selesaikan ketentuan.",
+        "4. Kirim bukti.",
+        "5. Tunggu admin memeriksa.",
+        "6. Nokos bisa di Akses setelah disetujui."
+        
       ].join("\n"),
       {
         reply_markup:
