@@ -99,7 +99,7 @@ async function sendHome(chatId, user) {
 
 async function sendStart(chatId, user) {
   const caption = [
-    "🎁 " + BOT_NAME,
+    " " + BOT_NAME,
     "",
     "Selamat datang, " + displayName(user) + "!",
     "",
