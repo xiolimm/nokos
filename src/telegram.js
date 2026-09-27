@@ -1,35 +1,110 @@
 const TOKEN = process.env.BOT_TOKEN;
-const API = `https://api.telegram.org/bot${TOKEN}`;
+const API = "https://api.telegram.org/bot${TOKEN}";
 
 async function tg(method, payload = {}) {
-  const res = await fetch(`${API}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.description || `Telegram ${method} failed`);
-  return data.result;
+const res = await fetch("${API}/${method}", {
+method: "POST",
+headers: {
+"content-type": "application/json"
+},
+body: JSON.stringify(payload)
+});
+
+const data = await res.json();
+
+if (!data.ok) {
+throw new Error(data.description || "Telegram ${method} failed");
+}
+
+return data.result;
 }
 
 function keyboard(rows) {
-  return { inline_keyboard: rows };
+return {
+inline_keyboard: rows
+};
 }
 
-async function sendMessage(chat_id, text, extra={}) {
-  return tg("sendMessage", { chat_id, text, ...extra });
+async function sendMessage(chat_id, text, extra = {}) {
+return tg("sendMessage", {
+chat_id,
+text,
+...extra
+});
 }
 
-async function editMessage(chat_id, message_id, text, extra={}) {
-  return tg("editMessageText", { chat_id, message_id, text, ...extra });
+async function editMessage(chat_id, message_id, text, extra = {}) {
+return tg("editMessageText", {
+chat_id,
+message_id,
+text,
+...extra
+});
 }
 
-async function answerCallbackQuery(id, text) {
-  return tg("answerCallbackQuery", { callback_query_id: id, text });
+async function editCaption(chat_id, message_id, caption, extra = {}) {
+return tg("editMessageCaption", {
+chat_id,
+message_id,
+caption,
+...extra
+});
 }
 
-async function sendVideo(chat_id, video, caption, extra={}) {
-  return tg("sendVideo", { chat_id, video, caption, ...extra });
+async function editReplyMarkup(chat_id, message_id, reply_markup) {
+return tg("editMessageReplyMarkup", {
+chat_id,
+message_id,
+reply_markup
+});
 }
 
-module.exports = { tg, keyboard, sendMessage, editMessage, answerCallbackQuery, sendVideo };
+async function answerCallbackQuery(id, text = "") {
+const payload = {
+callback_query_id: id
+};
+
+if (text) payload.text = text;
+
+return tg("answerCallbackQuery", payload);
+}
+
+async function sendVideo(chat_id, video, caption, extra = {}) {
+return tg("sendVideo", {
+chat_id,
+video,
+caption,
+...extra
+});
+}
+
+async function sendPhoto(chat_id, photo, caption, extra = {}) {
+return tg("sendPhoto", {
+chat_id,
+photo,
+caption,
+...extra
+});
+}
+
+async function sendDocument(chat_id, document, caption, extra = {}) {
+return tg("sendDocument", {
+chat_id,
+document,
+caption,
+...extra
+});
+}
+
+module.exports = {
+tg,
+keyboard,
+sendMessage,
+editMessage,
+editCaption,
+editReplyMarkup,
+answerCallbackQuery,
+sendVideo,
+sendPhoto,
+sendDocument
+};
