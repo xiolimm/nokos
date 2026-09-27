@@ -73,7 +73,7 @@ function homeText(user) {
     "Selesaikan task yang tersedia untuk mendapatkan nokos.",
     "",
     "🆔 User ID: " + user.id,
-    "🎁 Saldo: " + (user.balance || 0),
+    "🎁 Nokos: " + (user.balance || 0),
     "",
     "Pilih menu di bawah."
   ].join("\n");
