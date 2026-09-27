@@ -1124,7 +1124,7 @@ async function callback(query) {
         "3. Selesaikan ketentuan.",
         "4. Kirim bukti.",
         "5. Tunggu admin memeriksa.",
-        "6. Nokos bisa di Akses setelah disetujui."
+        "6. Nokos bisa di Akses setelah disetujui. ( nokos hanya bisa di klaim jika udah punya 4 nokos yaaaw(⁠ ⁠◜⁠‿⁠◝⁠ ⁠)⁠♡)"
         
       ].join("\n"),
       {
