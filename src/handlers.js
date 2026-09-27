@@ -1031,9 +1031,9 @@ async function callback(query) {
     return sendMessage(
       chatId,
       [
-        "🎁NOKOS",
+        "🎁 Reward",
         "",
-        "Nokos kamu: " +
+        "Reward kamu: " +
           (user.balance || 0),
         "",
         "Nokos diberikan setelah task disetujui admin."
