@@ -51,11 +51,11 @@ function mainKeyboard(isAdmin = false) {
 function taskKeyboard(tasks) {
   const rows = [];
 
-  for (const t of tasks) {
+  for (const task of tasks) {
     rows.push([
       {
-        text: `${t.title} • +${t.reward}`,
-        callback_data: `task:${t.id}`
+        text: `${task.title} • +${task.reward}`,
+        callback_data: `task:${task.id}`
       }
     ]);
   }
@@ -70,10 +70,7 @@ function taskKeyboard(tasks) {
   return keyboard(rows);
 }
 
-function taskDetailKeyboard(
-  task,
-  completed = false
-) {
+function taskDetailKeyboard(task, completed = false) {
   const rows = [
     [
       {
