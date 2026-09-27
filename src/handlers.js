@@ -11,10 +11,10 @@ const db = require("./db");
 const {
   tg,
   sendMessage,
-  answerCallbackQuery,
   sendVideo,
   sendPhoto,
   sendDocument,
+  answerCallbackQuery,
   keyboard
 } = require("./telegram");
 
@@ -31,10 +31,10 @@ function isAdmin(id) {
   return Number(id) === Number(ADMIN_ID);
 }
 
-function displayName(u) {
+function displayName(user) {
   const name = [
-    u.first_name,
-    u.last_name
+    user.first_name,
+    user.last_name
   ]
     .filter(Boolean)
     .join(" ");
@@ -42,26 +42,26 @@ function displayName(u) {
   return name || "User";
 }
 
-function homeText(u) {
+function homeText(user) {
   return [
     "🎁 " + BOT_NAME,
     "",
-    "Halo, " + displayName(u) + " 👋",
+    "Halo, " + displayName(user) + " 👋",
     "",
     "Selesaikan task yang tersedia untuk mendapatkan reward.",
     "",
-    "🆔 User ID: " + u.id,
-    "🎁 Reward: " + (u.balance || 0),
+    "🆔 User ID: " + user.id,
+    "🎁 Reward: " + (user.balance || 0),
     "",
     "Pilih menu di bawah."
   ].join("\n");
 }
 
-async function start(chatId, u) {
+async function start(chatId, user) {
   const caption = [
     "🎁 " + BOT_NAME,
     "",
-    "Selamat datang, " + displayName(u) + "!",
+    "Selamat datang, " + displayName(user) + "!",
     "",
     "Selesaikan misi yang tersedia dan kirim bukti untuk diperiksa admin.",
     "Reward hanya diberikan setelah bukti diverifikasi."
@@ -73,19 +73,19 @@ async function start(chatId, u) {
     caption,
     {
       reply_markup: mainKeyboard(
-        isAdmin(u.id)
+        isAdmin(user.id)
       )
     }
   );
 }
 
-async function showHome(chatId, u) {
+async function showHome(chatId, user) {
   return sendMessage(
     chatId,
-    homeText(u),
+    homeText(user),
     {
       reply_markup: mainKeyboard(
-        isAdmin(u.id)
+        isAdmin(user.id)
       )
     }
   );
@@ -130,104 +130,99 @@ async function adminPending(chatId) {
     );
   }
 
-  for (const s of rows) {
-    const name =
-      [
-        s.first_name,
-        s.last_name
-      ]
-        .filter(Boolean)
-        .join(" ") || "User";
+  for (const submission of rows) {
+    const name = [
+      submission.first_name,
+      submission.last_name
+    ]
+      .filter(Boolean)
+      .join(" ") || "User";
 
-    const text = [
-      "📥 SUBMISSION #" + s.id,
+    const info = [
+      "📥 SUBMISSION #" + submission.id,
       "",
       "👤 " + name,
-      "🔗 " +
-        (s.username
-          ? "@" + s.username
-          : "-"),
-      "🆔 " + s.user_id,
-      "📋 Task: " + s.task_id,
-      "🕐 " + s.created_at,
+      "🔗 " + (
+        submission.username
+          ? "@" + submission.username
+          : "-"
+      ),
+      "🆔 User ID: " + submission.user_id,
+      "📋 Task: " + submission.task_id,
+      "📎 Tipe: " + (
+        submission.proof_type || "-"
+      ),
+      "🕐 " + submission.created_at,
       "",
-      "📎 Tipe bukti: " +
-        (s.proof_type || "-"),
-      s.proof_text || ""
+      submission.proof_text
+        ? "📝 " + submission.proof_text
+        : ""
     ].join("\n");
 
     await sendMessage(
       chatId,
-      text,
+      info,
       {
         reply_markup: keyboard([
           [
             {
               text: "✅ APPROVE",
               callback_data:
-                "approve:" + s.id
+                "approve:" + submission.id
             },
             {
               text: "❌ REJECT",
               callback_data:
-                "reject:" + s.id
+                "reject:" + submission.id
             }
           ]
         ])
       }
     );
 
-    if (!s.proof_file_id) {
+    if (!submission.proof_file_id) {
       continue;
     }
 
     try {
-      if (s.proof_type === "photo") {
+      if (submission.proof_type === "photo") {
         await sendPhoto(
           chatId,
-          s.proof_file_id,
+          submission.proof_file_id,
           "📎 Bukti submission #" +
-            s.id
+            submission.id
         );
       } else if (
-        s.proof_type === "video"
+        submission.proof_type === "video"
       ) {
         await tg("sendVideo", {
           chat_id: chatId,
-          video: s.proof_file_id,
+          video: submission.proof_file_id,
           caption:
             "📎 Bukti submission #" +
-            s.id
+            submission.id
         });
       } else if (
-        s.proof_type === "document"
+        submission.proof_type === "document"
       ) {
         await sendDocument(
           chatId,
-          s.proof_file_id,
+          submission.proof_file_id,
           "📎 Bukti submission #" +
-            s.id
+            submission.id
         );
       }
-    } catch (e) {
+    } catch (error) {
       console.error(
         "FAILED SEND PROOF:",
-        e
-      );
-
-      await sendMessage(
-        chatId,
-        "⚠️ Bukti #" +
-          s.id +
-          " gagal dikirim ulang.\n\n" +
-          e.message
+        error
       );
     }
   }
 
   return sendMessage(
     chatId,
-    "🛠️ Admin panel",
+    "🛠️ Admin Panel",
     {
       reply_markup: adminKeyboard()
     }
@@ -235,111 +230,110 @@ async function adminPending(chatId) {
 }
 
 async function approveSubmission(
-  callbackQuery,
+  query,
   submissionId,
   adminChatId
 ) {
-  const sub =
+  const submission =
     await db.approveSubmission(
       submissionId,
       "Approved by admin"
     );
 
-  if (!sub) {
+  if (!submission) {
     return answerCallbackQuery(
-      callbackQuery.id,
+      query.id,
       "Submission sudah diproses."
     );
   }
 
   try {
     await sendMessage(
-      sub.user_id,
+      submission.user_id,
       [
         "✅ BUKTI DISETUJUI",
         "",
-        "Task: " + sub.task_id,
-        "🎁 Reward sudah ditambahkan ke akun kamu.",
+        "Task: " + submission.task_id,
         "",
-        "Terima kasih."
+        "🎁 Reward sudah ditambahkan ke akun kamu."
       ].join("\n")
     );
-  } catch (e) {
+  } catch (error) {
     console.error(
       "FAILED NOTIFY APPROVED USER:",
-      e
+      error
     );
   }
 
   await answerCallbackQuery(
-    callbackQuery.id,
+    query.id,
     "Submission approved."
   );
 
   return sendMessage(
     adminChatId,
     "✅ Submission #" +
-      sub.id +
+      submission.id +
       " berhasil di-approve."
   );
 }
 
 async function rejectSubmission(
-  callbackQuery,
+  query,
   submissionId,
   adminChatId
 ) {
-  const sub =
+  const submission =
     await db.rejectSubmission(
       submissionId,
       "Rejected by admin"
     );
 
-  if (!sub) {
+  if (!submission) {
     return answerCallbackQuery(
-      callbackQuery.id,
+      query.id,
       "Submission sudah diproses."
     );
   }
 
   try {
     await sendMessage(
-      sub.user_id,
+      submission.user_id,
       [
         "❌ BUKTI DITOLAK",
         "",
-        "Task: " + sub.task_id,
+        "Task: " + submission.task_id,
         "",
         "Silakan periksa kembali ketentuan task dan kirim bukti yang lebih jelas."
       ].join("\n")
     );
-  } catch (e) {
+  } catch (error) {
     console.error(
       "FAILED NOTIFY REJECTED USER:",
-      e
+      error
     );
   }
 
   await answerCallbackQuery(
-    callbackQuery.id,
+    query.id,
     "Submission rejected."
   );
 
   return sendMessage(
     adminChatId,
     "❌ Submission #" +
-      sub.id +
-      " ditolak."
+      submission.id +
+      " berhasil ditolak."
   );
 }
 
 async function handleProof(
   chatId,
-  u,
+  user,
   message
 ) {
   const session =
-    sessions.get(u.id);
+    sessions.get(user.id);
 
   if (
     !session ||
@@ -349,65 +343,70 @@ async function handleProof(
   }
 
   if (message.text === "/cancel") {
-    sessions.delete(u.id);
+    sessions.delete(user.id);
 
     await sendMessage(
       chatId,
       "❌ Pengiriman bukti dibatalkan.",
       {
-        reply_markup:
-          mainKeyboard(
-            isAdmin(u.id)
-          )
+        reply_markup: mainKeyboard(
+          isAdmin(user.id)
+        )
       }
     );
 
     return true;
   }
 
-  let type = null;
-  let fileId = null;
+  let proofType = null;
+  let proofFileId = null;
   let proofText = null;
 
   if (
     message.photo &&
-    message.photo.length
+    message.photo.length > 0
   ) {
-    type = "photo";
+    proofType = "photo";
 
-    fileId =
+    proofFileId =
       message.photo[
         message.photo.length - 1
       ].file_id;
   } else if (message.video) {
-    type = "video";
-    fileId = message.video.file_id;
+    proofType = "video";
+    proofFileId =
+      message.video.file_id;
   } else if (message.document) {
-    type = "document";
-    fileId = message.document.file_id;
+    proofType = "document";
+    proofFileId =
+      message.document.file_id;
   } else if (message.text) {
-    type = "text";
+    proofType = "text";
     proofText = message.text;
   } else {
     await sendMessage(
       chatId,
-      "⚠️ Format bukti belum didukung.\n\nKirim foto, video, document, atau teks."
+      [
+        "⚠️ Format bukti tidak didukung.",
+        "",
+        "Kirim foto, video, document, atau teks."
+      ].join("\n")
     );
 
     return true;
   }
 
   const completed =
-    await db.getCompleted(u.id);
+    await db.getCompleted(user.id);
 
   const alreadyCompleted =
-    completed.some(function(row) {
-      return row.task_id ===
+    completed.some(function(item) {
+      return item.task_id ===
         session.taskId;
     });
 
   if (alreadyCompleted) {
-    sessions.delete(u.id);
+    sessions.delete(user.id);
 
     await sendMessage(
       chatId,
@@ -419,59 +418,64 @@ async function handleProof(
 
   const pending =
     await db.getPendingSubmission(
-      u.id
+      user.id
     );
 
   if (pending) {
-    sessions.delete(u.id);
+    sessions.delete(user.id);
 
     await sendMessage(
       chatId,
-      "⏳ Kamu masih memiliki submission pending #" +
-        pending.id +
-        ".\n\nTunggu admin memeriksanya terlebih dahulu."
+      [
+        "⏳ Kamu masih memiliki submission pending #" +
+          pending.id,
+        "",
+        "Tunggu admin memeriksanya terlebih dahulu."
+      ].join("\n")
     );
 
     return true;
   }
 
-  const sub =
+  const submission =
     await db.createSubmission({
-      user_id: u.id,
+      user_id: user.id,
       task_id: session.taskId,
-      proof_type: type,
-      proof_file_id: fileId,
+      proof_type: proofType,
+      proof_file_id: proofFileId,
       proof_text: proofText
     });
 
-  sessions.delete(u.id);
+  sessions.delete(user.id);
 
-  const task = TASKS.find(
-    function(t) {
-      return t.id ===
+  const task =
+    TASKS.find(function(item) {
+      return item.id ===
         session.taskId;
-    }
-  );
+    });
 
   const adminText = [
     "📥 SUBMISSION BARU",
     "",
     "👤 Nama: " +
-      displayName(u),
+      displayName(user),
     "🔗 Username: " +
-      (u.username
-        ? "@" + u.username
-        : "-"),
-    "🆔 User ID: " + u.id,
+      (
+        user.username
+          ? "@" + user.username
+          : "-"
+      ),
+    "🆔 User ID: " + user.id,
     "📋 Misi: " +
-      (task
-        ? task.title
-        : session.taskId),
-    "",
+      (
+        task
+          ? task.title
+          : session.taskId
+      ),
     "📎 Tipe bukti: " +
-      type,
+      proofType,
     "🆔 Submission #" +
-      sub.id
+      submission.id
   ].join("\n");
 
   try {
@@ -479,75 +483,72 @@ async function handleProof(
       ADMIN_ID,
       adminText,
       {
-        reply_markup:
-          keyboard([
-            [
-              {
-                text: "✅ APPROVE",
-                callback_data:
-                  "approve:" +
-                  sub.id
-              },
-              {
-                text: "❌ REJECT",
-                callback_data:
-                  "reject:" +
-                  sub.id
-              }
-            ]
-          ])
+        reply_markup: keyboard([
+          [
+            {
+              text: "✅ APPROVE",
+              callback_data:
+                "approve:" +
+                submission.id
+            },
+            {
+              text: "❌ REJECT",
+              callback_data:
+                "reject:" +
+                submission.id
+            }
+          ]
+        ])
       }
     );
 
-    if (fileId) {
-      if (type === "photo") {
+    if (proofFileId) {
+      if (proofType === "photo") {
         await sendPhoto(
           ADMIN_ID,
-          fileId,
+          proofFileId,
           "📎 Bukti submission #" +
-            sub.id
+            submission.id
         );
       } else if (
-        type === "video"
+        proofType === "video"
       ) {
         await tg("sendVideo", {
           chat_id: ADMIN_ID,
-          video: fileId,
+          video: proofFileId,
           caption:
             "📎 Bukti submission #" +
-            sub.id
+            submission.id
         });
       } else if (
-        type === "document"
+        proofType === "document"
       ) {
         await sendDocument(
           ADMIN_ID,
-          fileId,
+          proofFileId,
           "📎 Bukti submission #" +
-            sub.id
-        );
-      } else if (
-        type === "text"
-      ) {
-        await sendMessage(
-          ADMIN_ID,
-          "📝 Isi bukti:\n\n" +
-            proofText
+            submission.id
         );
       }
     }
-  } catch (e) {
+
+    if (
+      proofType === "text" &&
+      proofText
+    ) {
+      await sendMessage(
+        ADMIN_ID,
+        [
+          "📝 ISI BUKTI",
+          "",
+          proofText
+        ].join("\n")
+      );
+    }
+  } catch (error) {
     console.error(
       "FAILED SEND SUBMISSION TO ADMIN:",
-      e
-    );
-
-    await sendMessage(
-      ADMIN_ID,
-      "⚠️ Submission #" +
-        sub.id +
-        " sudah tersimpan di database, tetapi notifikasi ke admin mengalami error.\n\n" +
-        e.message
+      error
     );
   }
 
@@ -556,10 +557,11 @@ async function handleProof(
     [
       "✅ Bukti sudah diterima.",
       "",
-      "Submission #" + sub.id,
+      "Submission #" +
+        submission.id,
       "Status: ⏳ Menunggu pemeriksaan admin.",
       "",
-      "Jangan kirim submission berulang kali sebelum yang ini diproses."
+      "Tunggu sampai admin memproses bukti kamu."
     ].join("\n")
   );
 
@@ -568,15 +570,15 @@ async function handleProof(
 
 async function handleBroadcast(
   chatId,
-  u,
+  user,
   message
 ) {
-  if (!isAdmin(u.id)) {
+  if (!isAdmin(user.id)) {
     return false;
   }
 
   const session =
-    sessions.get(u.id);
+    sessions.get(user.id);
 
   if (
     !session ||
@@ -586,14 +588,13 @@ async function handleBroadcast(
   }
 
   if (message.text === "/cancel") {
-    sessions.delete(u.id);
+    sessions.delete(user.id);
 
     await sendMessage(
       chatId,
       "❌ Broadcast dibatalkan.",
       {
-        reply_markup:
-          adminKeyboard()
+        reply_markup: adminKeyboard()
       }
     );
 
@@ -602,18 +603,19 @@ async function handleBroadcast(
 
   const text =
     message.text ||
-    message.caption;
+    message.caption ||
+    "";
 
   if (!text) {
     await sendMessage(
       chatId,
-      "⚠️ Broadcast saat ini hanya mendukung teks."
+      "⚠️ Broadcast saat ini hanya mendukung pesan teks."
     );
 
     return true;
   }
 
-  sessions.delete(u.id);
+  sessions.delete(user.id);
 
   const users =
     await db.allUsers();
@@ -629,13 +631,13 @@ async function handleBroadcast(
       );
 
       sent++;
-    } catch (e) {
+    } catch (error) {
       failed++;
 
       console.error(
         "BROADCAST FAILED:",
         row.id,
-        e.message
+        error.message
       );
     }
   }
@@ -655,39 +657,38 @@ async function handleBroadcast(
       "❌ Gagal: " + failed
     ].join("\n"),
     {
-      reply_markup:
-        adminKeyboard()
+      reply_markup: adminKeyboard()
     }
   );
 
   return true;
 }
 
-async function callback(q) {
+async function callback(query) {
   const chatId =
-    q.message &&
-    q.message.chat
-      ? q.message.chat.id
+    query.message &&
+    query.message.chat
+      ? query.message.chat.id
       : null;
 
   const userId =
-    q.from
-      ? q.from.id
+    query.from
+      ? query.from.id
       : null;
 
   const data =
-    q.data || "";
+    query.data || "";
 
   if (!chatId || !userId) {
     return;
   }
 
-  const u =
+  const user =
     await db.getUser(userId);
 
-  if (!u) {
+  if (!user) {
     await answerCallbackQuery(
-      q.id,
+      query.id,
       "Silakan /start terlebih dahulu."
     );
 
@@ -695,29 +696,24 @@ async function callback(q) {
   }
 
   if (data === "home") {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return showHome(
       chatId,
-      u
+      user
     );
   }
 
   if (data === "menu_tasks") {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return sendMessage(
       chatId,
       [
         "📋 TASK / MISI",
         "",
-        "Selesaikan task berikut sesuai instruksi.",
-        "Setelah selesai, kirim bukti.",
-        "Admin akan memeriksa bukti sebelum reward diberikan."
+        "Selesaikan task sesuai instruksi.",
+        "Setelah selesai, kirim bukti untuk diperiksa admin."
       ].join("\n"),
       {
         reply_markup:
@@ -727,19 +723,15 @@ async function callback(q) {
   }
 
   if (data.startsWith("task:")) {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
-    const id =
-      data.slice(5);
+    const taskId =
+      data.substring(5);
 
     const task =
-      TASKS.find(
-        function(x) {
-          return x.id === id;
-        }
-      );
+      TASKS.find(function(item) {
+        return item.id === taskId;
+      });
 
     if (!task) {
       return sendMessage(
@@ -748,17 +740,16 @@ async function callback(q) {
       );
     }
 
-    const completedRows =
+    const completed =
       await db.getCompleted(
-        u.id
+        user.id
       );
 
-    const completed =
-      completedRows.some(
-        function(x) {
-          return x.task_id === id;
-        }
-      );
+    const isCompleted =
+      completed.some(function(item) {
+        return item.task_id ===
+          taskId;
+      });
 
     return sendMessage(
       chatId,
@@ -775,35 +766,31 @@ async function callback(q) {
         "",
         "Status: " +
           (
-            completed
-              ? "✅ Sudah selesai & disetujui"
-              : "⏳ Belum disetujui"
+            isCompleted
+              ? "✅ Sudah selesai"
+              : "⏳ Belum selesai"
           )
       ].join("\n"),
       {
         reply_markup:
           taskDetailKeyboard(
             task,
-            completed
+            isCompleted
           )
       }
     );
   }
 
   if (data.startsWith("submit:")) {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
-    const id =
-      data.slice(7);
+    const taskId =
+      data.substring(7);
 
     const task =
-      TASKS.find(
-        function(x) {
-          return x.id === id;
-        }
-      );
+      TASKS.find(function(item) {
+        return item.id === taskId;
+      });
 
     if (!task) {
       return sendMessage(
@@ -812,17 +799,15 @@ async function callback(q) {
       );
     }
 
-    const completedRows =
+    const completed =
       await db.getCompleted(
-        u.id
+        user.id
       );
 
     if (
-      completedRows.some(
-        function(x) {
-          return x.task_id === id;
-        }
-      )
+      completed.some(function(item) {
+        return item.task_id === taskId;
+      })
     ) {
       return sendMessage(
         chatId,
@@ -832,35 +817,39 @@ async function callback(q) {
 
     const pending =
       await db.getPendingSubmission(
-        u.id
+        user.id
       );
 
     if (pending) {
       return sendMessage(
         chatId,
-        "⏳ Kamu masih memiliki submission pending #" +
-          pending.id +
-          ".\n\nTunggu admin memeriksanya terlebih dahulu."
+        [
+          "⏳ Masih ada submission pending #" +
+            pending.id,
+          "",
+          "Tunggu admin memeriksanya terlebih dahulu."
+        ].join("\n")
       );
     }
 
     sessions.set(
-      u.id,
+      user.id,
       {
         mode: "proof",
-        taskId: id
+        taskId: taskId
       }
     );
 
     return sendMessage(
       chatId,
       [
-        "📤 KIRIM BUKTI — " +
-          task.title,
+        "📤 KIRIM BUKTI",
+        "",
+        task.title,
         "",
         task.proofHint,
         "",
-        "Kirim screenshot, foto, video, document, atau teks penjelasan.",
+        "Kirim screenshot, foto, video, document, atau teks.",
         "",
         "Ketik /cancel untuk membatalkan."
       ].join("\n")
@@ -868,9 +857,7 @@ async function callback(q) {
   }
 
   if (data === "menu_profile") {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return sendMessage(
       chatId,
@@ -878,128 +865,117 @@ async function callback(q) {
         "👤 PROFIL",
         "",
         "Nama: " +
-          displayName(u),
+          displayName(user),
         "Username: " +
-          (u.username
-            ? "@" + u.username
-            : "-"),
-        "User ID: " + u.id,
+          (
+            user.username
+              ? "@" + user.username
+              : "-"
+          ),
+        "User ID: " +
+          user.id,
         "",
         "🎁 Reward: " +
-          (u.balance || 0)
+          (user.balance || 0)
       ].join("\n"),
       {
-        reply_markup:
-          keyboard([
-            [
-              {
-                text: "🏠 MENU UTAMA",
-                callback_data:
-                  "home"
-              }
-            ]
-          ])
+        reply_markup: keyboard([
+          [
+            {
+              text: "🏠 MENU UTAMA",
+              callback_data: "home"
+            }
+          ]
+        ])
       }
     );
   }
 
   if (data === "menu_reward") {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return sendMessage(
       chatId,
       [
         "🎁 REWARD",
         "",
-        "Saldo reward kamu saat ini: " +
-          (u.balance || 0),
+        "Saldo reward kamu: " +
+          (user.balance || 0),
         "",
-        "Reward diberikan setelah task diverifikasi admin."
+        "Reward diberikan setelah task disetujui admin."
       ].join("\n"),
       {
-        reply_markup:
-          keyboard([
-            [
-              {
-                text: "📋 LIHAT TASK",
-                callback_data:
-                  "menu_tasks"
-              }
-            ],
-            [
-              {
-                text: "🏠 MENU UTAMA",
-                callback_data:
-                  "home"
-              }
-            ]
-          ])
+        reply_markup: keyboard([
+          [
+            {
+              text: "📋 TASK / MISI",
+              callback_data: "menu_tasks"
+            }
+          ],
+          [
+            {
+              text: "🏠 MENU UTAMA",
+              callback_data: "home"
+            }
+          ]
+        ])
       }
     );
   }
 
   if (data === "menu_status") {
-    await answerCallbackQuery(
-      q.id
-    );
-
-    const rows =
-      await db.getCompleted(
-        u.id
-      );
+    await answerCallbackQuery(query.id);
 
     const completed =
+      await db.getCompleted(
+        user.id
+      );
+
+    const completedSet =
       new Set(
-        rows.map(
-          function(x) {
-            return x.task_id;
-          }
-        )
+        completed.map(function(item) {
+          return item.task_id;
+        })
       );
 
     const lines =
-      TASKS.map(
-        function(t) {
-          return (
-            (
-              completed.has(t.id)
-                ? "✅"
-                : "⏳"
-            ) +
-            " " +
-            t.title +
-            " (+" +
-            t.reward +
-            ")"
-          );
-        }
-      );
+      TASKS.map(function(task) {
+        return (
+          (
+            completedSet.has(task.id)
+              ? "✅"
+              : "⏳"
+          ) +
+          " " +
+          task.title +
+          " (+" +
+          task.reward +
+          ")"
+        );
+      });
 
     return sendMessage(
       chatId,
-      "📊 STATUS\n\n" +
-        lines.join("\n"),
+      [
+        "📊 STATUS",
+        "",
+        ...lines
+      ].join("\n"),
       {
-        reply_markup:
-          keyboard([
-            [
-              {
-                text: "🏠 MENU UTAMA",
-                callback_data:
-                  "home"
-              }
-            ]
-          ])
+        reply_markup: keyboard([
+          [
+            {
+              text: "🏠 MENU UTAMA",
+              callback_data: "home"
+            }
+          ]
+        ])
       }
     );
   }
 
   if (data === "menu_read") {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return sendMessage(
       chatId,
@@ -1008,39 +984,34 @@ async function callback(q) {
         "",
         "1. Pilih task.",
         "2. Buka link task.",
-        "3. Selesaikan ketentuan yang dijelaskan.",
+        "3. Selesaikan ketentuannya.",
         "4. Kirim bukti yang jelas.",
         "5. Tunggu admin memeriksa.",
         "6. Reward masuk setelah disetujui.",
         "",
-        "⚠️ Jangan kirim bukti palsu atau edit screenshot."
+        "⚠️ Jangan kirim bukti palsu atau screenshot yang diedit."
       ].join("\n"),
       {
-        reply_markup:
-          keyboard([
-            [
-              {
-                text: "📋 TASK / MISI",
-                callback_data:
-                  "menu_tasks"
-              }
-            ],
-            [
-              {
-                text: "🏠 MENU UTAMA",
-                callback_data:
-                  "home"
-              }
-            ]
-          ])
+        reply_markup: keyboard([
+          [
+            {
+              text: "📋 TASK / MISI",
+              callback_data: "menu_tasks"
+            }
+          ],
+          [
+            {
+              text: "🏠 MENU UTAMA",
+              callback_data: "home"
+            }
+          ]
+        ])
       }
     );
   }
 
   if (data === "menu_developer") {
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return sendMessage(
       chatId,
@@ -1049,19 +1020,17 @@ async function callback(q) {
         "",
         DEVELOPER,
         "",
-        "NOKOSS XIOLIM FREE"
+        BOT_NAME
       ].join("\n"),
       {
-        reply_markup:
-          keyboard([
-            [
-              {
-                text: "🏠 MENU UTAMA",
-                callback_data:
-                  "home"
-              }
-            ]
-          ])
+        reply_markup: keyboard([
+          [
+            {
+              text: "🏠 MENU UTAMA",
+              callback_data: "home"
+            }
+          ]
+        ])
       }
     );
   }
@@ -1069,63 +1038,57 @@ async function callback(q) {
   if (data === "admin_panel") {
     if (!isAdmin(userId)) {
       return answerCallbackQuery(
-        q.id,
+        query.id,
         "Akses ditolak."
       );
     }
 
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
-    return adminPanel(
-      chatId
-    );
+    return adminPanel(chatId);
   }
 
   if (data === "admin_pending") {
     if (!isAdmin(userId)) {
       return answerCallbackQuery(
-        q.id,
+        query.id,
         "Akses ditolak."
       );
     }
 
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
-    return adminPending(
-      chatId
-    );
+    return adminPending(chatId);
   }
 
   if (data === "admin_stats") {
     if (!isAdmin(userId)) {
       return answerCallbackQuery(
-        q.id,
+        query.id,
         "Akses ditolak."
       );
     }
 
-    const s =
+    const stats =
       await db.stats();
 
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return sendMessage(
       chatId,
       [
         "📊 STATISTIK",
         "",
-        "👥 Users: " + s.users,
-        "⏳ Pending: " + s.pending,
-        "✅ Approved: " + s.approved,
-        "❌ Rejected: " + s.rejected,
+        "👥 Users: " +
+          stats.users,
+        "⏳ Pending: " +
+          stats.pending,
+        "✅ Approved: " +
+          stats.approved,
+        "❌ Rejected: " +
+          stats.rejected,
         "🎁 Total reward user: " +
-          s.rewards
+          stats.rewards
       ].join("\n"),
       {
         reply_markup:
@@ -1137,7 +1100,7 @@ async function callback(q) {
   if (data === "admin_broadcast") {
     if (!isAdmin(userId)) {
       return answerCallbackQuery(
-        q.id,
+        query.id,
         "Akses ditolak."
       );
     }
@@ -1149,13 +1112,33 @@ async function callback(q) {
       }
     );
 
-    await answerCallbackQuery(
-      q.id
-    );
+    await answerCallbackQuery(query.id);
 
     return sendMessage(
       chatId,
       [
         "📢 BROADCAST",
         "",
-        "Kirim pesan yang ingin dikirim ke semua user sekarang.
+        "Kirim pesan broadcast sekarang.",
+        "",
+        "Ketik /cancel untuk membatalkan."
+      ].join("\n")
+    );
+  }
+
+  return sendMessage(
+    message.chat.id,
+    "Gunakan menu di bawah untuk mulai.",
+    {
+      reply_markup:
+        mainKeyboard(
+          isAdmin(user.id)
+        )
+    }
+  );
+}
+
+module.exports = {
+  handleMessage,
+  callback
+};
