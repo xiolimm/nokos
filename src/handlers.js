@@ -1,47 +1,98 @@
-const config = require("./config");
-const db = require("./db");
-const tg = require("./telegram");
-const kb = require("./keyboards");
+const {
+  VIDEO_URL,
+  BOT_NAME,
+  DEVELOPER,
+  ADMIN_ID,
+  TASKS
+} = require("./config");
 
-const VIDEO_URL = config.VIDEO_URL;
-const BOT_NAME = config.BOT_NAME;
-const DEVELOPER = config.DEVELOPER;
-const ADMIN_ID = Number(config.ADMIN_ID);
-const TASKS = config.TASKS;
+const db = require("./db");
+
+const {
+  tg,
+  keyboard,
+  sendMessage,
+  sendVideo,
+  sendPhoto,
+  sendDocument,
+  answerCallbackQuery
+} = require("./telegram");
+
+const {
+  mainKeyboard,
+  taskKeyboard,
+  taskDetailKeyboard,
+  adminKeyboard
+} = require("./keyboards");
+
+/*
+|--------------------------------------------------------------------------
+| SESSION
+|--------------------------------------------------------------------------
+| Catatan:
+| Session disimpan di memory server.
+| Untuk flow sederhana masih bisa digunakan.
+|--------------------------------------------------------------------------
+*/
 
 const sessions = new Map();
 
-function isAdmin(id) {
-  return Number(id) === ADMIN_ID;
+/*
+|--------------------------------------------------------------------------
+| HELPERS
+|--------------------------------------------------------------------------
+*/
+
+function isAdmin(userId) {
+  return Number(userId) === Number(ADMIN_ID);
 }
 
-function nameOf(user) {
-  const name = [
+function displayName(user) {
+  const parts = [
     user.first_name,
     user.last_name
-  ].filter(Boolean).join(" ");
+  ].filter(Boolean);
 
-  return name || "User";
+  return parts.length
+    ? parts.join(" ")
+    : "User";
 }
 
-function menu(user) {
+function getTask(taskId) {
+  return TASKS.find(function(task) {
+    return task.id === taskId;
+  });
+}
+
+function homeText(user) {
   return [
     "🎁 " + BOT_NAME,
     "",
-    "Halo, " + nameOf(user) + " 👋",
+    "Halo, " + displayName(user) + " 👋",
     "",
+    "Selesaikan task yang tersedia untuk mendapatkan reward.",
+    "",
+    "🆔 User ID: " + user.id,
     "🎁 Saldo: " + (user.balance || 0),
     "",
     "Pilih menu di bawah."
   ].join("\n");
 }
 
+/*
+|--------------------------------------------------------------------------
+| HOME / START
+|--------------------------------------------------------------------------
+*/
+
 async function sendHome(chatId, user) {
-  return tg.sendMessage(
+  return sendMessage(
     chatId,
-    menu(user),
+    homeText(user),
     {
-      reply_markup: kb.mainKeyboard(isAdmin(user.id))
+      reply_markup: mainKeyboard(
+        isAdmin(user.id)
+      )
     }
   );
 }
@@ -50,54 +101,67 @@ async function sendStart(chatId, user) {
   const caption = [
     "🎁 " + BOT_NAME,
     "",
-    "Selamat datang, " + nameOf(user) + "!",
+    "Selamat datang, " + displayName(user) + "!",
     "",
-    "Selesaikan task yang tersedia.",
+    "Selesaikan misi yang tersedia.",
     "Kirim bukti setelah task selesai.",
     "",
-    "Reward diberikan setelah bukti disetujui admin."
+    "🎁 Reward diberikan setelah bukti disetujui admin."
   ].join("\n");
 
-  return tg.sendVideo(
+  return sendVideo(
     chatId,
     VIDEO_URL,
     caption,
     {
-      reply_markup: kb.mainKeyboard(isAdmin(user.id))
+      reply_markup: mainKeyboard(
+        isAdmin(user.id)
+      )
     }
   );
 }
 
-async function showTasks(chatId, user) {
-  return tg.sendMessage(
+/*
+|--------------------------------------------------------------------------
+| TASK LIST
+|--------------------------------------------------------------------------
+*/
+
+async function showTasks(chatId) {
+  return sendMessage(
     chatId,
     [
       "📋 TASK / MISI",
       "",
-      "Pilih task yang ingin dikerjakan."
+      "Pilih task yang ingin kamu kerjakan."
     ].join("\n"),
     {
-      reply_markup: kb.taskKeyboard(TASKS)
+      reply_markup: taskKeyboard(TASKS)
     }
   );
 }
 
+/*
+|--------------------------------------------------------------------------
+| TASK DETAIL
+|--------------------------------------------------------------------------
+*/
+
 async function showTask(chatId, user, taskId) {
-  const task = TASKS.find(function(item) {
-    return item.id === taskId;
-  });
+  const task = getTask(taskId);
 
   if (!task) {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
       "❌ Task tidak ditemukan."
     );
   }
 
-  const completed = await db.getCompleted(user.id);
+  const completed =
+    await db.getCompleted(user.id);
 
   const done = completed.some(function(item) {
-    return item.task_id === taskId;
+    return item.task_id === task.id;
   });
 
   const text = [
@@ -107,61 +171,84 @@ async function showTask(chatId, user, taskId) {
     "",
     task.description,
     "",
-    "📎 Bukti yang diperlukan:",
+    "📎 Bukti:",
     task.proofHint,
     "",
-    "Status: " + (done ? "✅ Selesai" : "⏳ Belum selesai")
+    "Status: " +
+      (done ? "✅ Sudah selesai" : "⏳ Belum selesai")
   ].join("\n");
 
-  return tg.sendMessage(
+  return sendMessage(
     chatId,
     text,
     {
-      reply_markup: kb.taskDetailKeyboard(task, done)
+      reply_markup:
+        taskDetailKeyboard(
+          task,
+          done
+        )
     }
   );
 }
 
+/*
+|--------------------------------------------------------------------------
+| START PROOF
+|--------------------------------------------------------------------------
+*/
+
 async function startProof(chatId, userId, taskId) {
-  const task = TASKS.find(function(item) {
-    return item.id === taskId;
-  });
+  const task = getTask(taskId);
 
   if (!task) {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
       "❌ Task tidak ditemukan."
     );
   }
 
-  const completed = await db.getCompleted(userId);
+  const completed =
+    await db.getCompleted(userId);
 
-  if (completed.some(function(item) {
-    return item.task_id === taskId;
-  })) {
-    return tg.sendMessage(
+  const alreadyDone =
+    completed.some(function(item) {
+      return item.task_id === taskId;
+    });
+
+  if (alreadyDone) {
+    return sendMessage(
       chatId,
-      "✅ Task ini sudah pernah diselesaikan."
+      "✅ Task ini sudah pernah kamu selesaikan."
     );
   }
 
-  const pending = await db.getPendingSubmission(userId);
+  const pending =
+    await db.getPendingSubmission(
+      userId
+    );
 
   if (pending) {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
-      "⏳ Kamu masih memiliki submission pending #" +
-      pending.id +
-      ".\n\nTunggu admin memeriksanya terlebih dahulu."
+      [
+        "⏳ Kamu masih memiliki submission pending.",
+        "",
+        "Submission #" + pending.id,
+        "",
+        "Tunggu admin memeriksa bukti tersebut terlebih dahulu."
+      ].join("\n")
     );
   }
 
-  sessions.set(userId, {
-    mode: "proof",
-    taskId: taskId
-  });
+  sessions.set(
+    userId,
+    {
+      mode: "proof",
+      taskId: taskId
+    }
+  );
 
-  return tg.sendMessage(
+  return sendMessage(
     chatId,
     [
       "📤 KIRIM BUKTI",
@@ -170,169 +257,275 @@ async function startProof(chatId, userId, taskId) {
       "",
       task.proofHint,
       "",
-      "Kirim foto, video, document, atau teks.",
+      "Kirim salah satu:",
+      "• Screenshot / foto",
+      "• Video",
+      "• Document",
+      "• Teks",
       "",
       "Ketik /cancel untuk membatalkan."
     ].join("\n")
   );
 }
 
-async function sendProofToAdmin(user, submission) {
-  const task = TASKS.find(function(item) {
-    return item.id === submission.task_id;
-  });
+/*
+|--------------------------------------------------------------------------
+| SEND PROOF TO ADMIN
+|--------------------------------------------------------------------------
+*/
 
-  const text = [
+async function sendProofToAdmin(
+  user,
+  submission
+) {
+  const task =
+    getTask(submission.task_id);
+
+  const adminText = [
     "📥 SUBMISSION BARU",
     "",
-    "👤 Nama: " + nameOf(user),
-    "🔗 Username: " + (
-      user.username
-        ? "@" + user.username
-        : "-"
-    ),
-    "🆔 User ID: " + user.id,
-    "📋 Task: " + (
-      task
-        ? task.title
-        : submission.task_id
-    ),
-    "📎 Tipe: " + (
-      submission.proof_type || "-"
-    ),
-    "🆔 Submission #" + submission.id
+    "👤 Nama: " +
+      displayName(user),
+    "🔗 Username: " +
+      (
+        user.username
+          ? "@" + user.username
+          : "-"
+      ),
+    "🆔 User ID: " +
+      user.id,
+    "",
+    "📋 Task: " +
+      (
+        task
+          ? task.title
+          : submission.task_id
+      ),
+    "🎁 Reward: +" +
+      (
+        task
+          ? task.reward
+          : 0
+      ),
+    "📎 Tipe bukti: " +
+      (
+        submission.proof_type || "-"
+      ),
+    "🆔 Submission #" +
+      submission.id
   ].join("\n");
 
-  await tg.sendMessage(
+  await sendMessage(
     ADMIN_ID,
-    text,
+    adminText,
     {
-      reply_markup: tg.keyboard([
+      reply_markup: keyboard([
         [
           {
             text: "✅ APPROVE",
-            callback_data: "approve:" + submission.id
+            callback_data:
+              "approve:" +
+              submission.id
           },
           {
             text: "❌ REJECT",
-            callback_data: "reject:" + submission.id
+            callback_data:
+              "reject:" +
+              submission.id
           }
         ]
       ])
     }
   );
 
-  if (!submission.proof_file_id) {
-    if (submission.proof_text) {
-      await tg.sendMessage(
-        ADMIN_ID,
-        "📝 Bukti teks:\n\n" + submission.proof_text
-      );
-    }
-
-    return;
-  }
-
-  if (submission.proof_type === "photo") {
-    await tg.sendPhoto(
+  if (
+    submission.proof_type === "photo" &&
+    submission.proof_file_id
+  ) {
+    await sendPhoto(
       ADMIN_ID,
       submission.proof_file_id,
-      "📎 Bukti #" + submission.id
+      "📎 Bukti submission #" +
+        submission.id
     );
+
     return;
   }
 
-  if (submission.proof_type === "video") {
-    await tg.tg(
+  if (
+    submission.proof_type === "video" &&
+    submission.proof_file_id
+  ) {
+    await tg(
       "sendVideo",
       {
         chat_id: ADMIN_ID,
         video: submission.proof_file_id,
-        caption: "📎 Bukti #" + submission.id
+        caption:
+          "📎 Bukti submission #" +
+          submission.id
       }
     );
+
     return;
   }
 
-  if (submission.proof_type === "document") {
-    await tg.sendDocument(
+  if (
+    submission.proof_type === "document" &&
+    submission.proof_file_id
+  ) {
+    await sendDocument(
       ADMIN_ID,
       submission.proof_file_id,
-      "📎 Bukti #" + submission.id
+      "📎 Bukti submission #" +
+        submission.id
+    );
+
+    return;
+  }
+
+  if (
+    submission.proof_type === "text" &&
+    submission.proof_text
+  ) {
+    await sendMessage(
+      ADMIN_ID,
+      [
+        "📝 BUKTI TEKS",
+        "",
+        submission.proof_text
+      ].join("\n")
     );
   }
 }
 
-async function handleProof(chatId, user, message) {
-  const session = sessions.get(user.id);
+/*
+|--------------------------------------------------------------------------
+| HANDLE PROOF
+|--------------------------------------------------------------------------
+*/
 
-  if (!session || session.mode !== "proof") {
+async function handleProof(
+  chatId,
+  user,
+  message
+) {
+  const session =
+    sessions.get(user.id);
+
+  if (
+    !session ||
+    session.mode !== "proof"
+  ) {
     return false;
   }
 
-  if (message.text === "/cancel") {
+  if (
+    message.text === "/cancel"
+  ) {
     sessions.delete(user.id);
 
-    await tg.sendMessage(
+    await sendMessage(
       chatId,
       "❌ Pengiriman bukti dibatalkan.",
       {
-        reply_markup: kb.mainKeyboard(isAdmin(user.id))
+        reply_markup:
+          mainKeyboard(
+            isAdmin(user.id)
+          )
       }
     );
 
     return true;
   }
 
-  let type = null;
-  let fileId = null;
+  let proofType = null;
+  let proofFileId = null;
   let proofText = null;
 
-  if (message.photo && message.photo.length > 0) {
-    type = "photo";
-    fileId = message.photo[
-      message.photo.length - 1
-    ].file_id;
+  if (
+    message.photo &&
+    message.photo.length
+  ) {
+    proofType = "photo";
+
+    proofFileId =
+      message.photo[
+        message.photo.length - 1
+      ].file_id;
   } else if (message.video) {
-    type = "video";
-    fileId = message.video.file_id;
+    proofType = "video";
+    proofFileId =
+      message.video.file_id;
   } else if (message.document) {
-    type = "document";
-    fileId = message.document.file_id;
+    proofType = "document";
+    proofFileId =
+      message.document.file_id;
   } else if (message.text) {
-    type = "text";
+    proofType = "text";
     proofText = message.text;
   } else {
-    await tg.sendMessage(
+    await sendMessage(
       chatId,
-      "⚠️ Format tidak didukung. Kirim foto, video, document, atau teks."
+      [
+        "⚠️ Format bukti tidak didukung.",
+        "",
+        "Kirim foto, video, document, atau teks."
+      ].join("\n")
     );
 
     return true;
   }
 
-  const pending = await db.getPendingSubmission(user.id);
+  const completed =
+    await db.getCompleted(user.id);
+
+  const alreadyDone =
+    completed.some(function(item) {
+      return item.task_id ===
+        session.taskId;
+    });
+
+  if (alreadyDone) {
+    sessions.delete(user.id);
+
+    await sendMessage(
+      chatId,
+      "✅ Task ini sudah pernah diselesaikan."
+    );
+
+    return true;
+  }
+
+  const pending =
+    await db.getPendingSubmission(
+      user.id
+    );
 
   if (pending) {
     sessions.delete(user.id);
 
-    await tg.sendMessage(
+    await sendMessage(
       chatId,
-      "⏳ Submission #" +
-      pending.id +
-      " masih menunggu pemeriksaan admin."
+      [
+        "⏳ Kamu masih memiliki submission pending.",
+        "",
+        "Submission #" +
+          pending.id
+      ].join("\n")
     );
 
     return true;
   }
 
-  const submission = await db.createSubmission({
-    user_id: user.id,
-    task_id: session.taskId,
-    proof_type: type,
-    proof_file_id: fileId,
-    proof_text: proofText
-  });
+  const submission =
+    await db.createSubmission({
+      user_id: user.id,
+      task_id: session.taskId,
+      proof_type: proofType,
+      proof_file_id: proofFileId,
+      proof_text: proofText
+    });
 
   sessions.delete(user.id);
 
@@ -348,182 +541,249 @@ async function handleProof(chatId, user, message) {
     );
   }
 
-  await tg.sendMessage(
+  await sendMessage(
     chatId,
     [
       "✅ BUKTI TERKIRIM",
       "",
-      "Submission #" + submission.id,
+      "Submission #" +
+        submission.id,
       "",
       "⏳ Status: Menunggu pemeriksaan admin.",
       "",
-      "Jangan kirim ulang sebelum submission ini diproses."
+      "Tunggu admin memproses bukti kamu."
     ].join("\n")
   );
 
   return true;
 }
 
+/*
+|--------------------------------------------------------------------------
+| ADMIN PANEL
+|--------------------------------------------------------------------------
+*/
+
 async function adminPanel(chatId) {
-  return tg.sendMessage(
+  return sendMessage(
     chatId,
     [
       "👑 ADMIN PANEL",
       "",
-      "Pilih menu:"
+      "Pilih fitur admin:"
     ].join("\n"),
     {
-      reply_markup: kb.adminKeyboard()
+      reply_markup:
+        adminKeyboard()
     }
   );
 }
 
+/*
+|--------------------------------------------------------------------------
+| ADMIN PENDING
+|--------------------------------------------------------------------------
+*/
+
 async function adminPending(chatId) {
-  const rows = await db.sql`
-    SELECT
-      s.*,
-      u.username,
-      u.first_name,
-      u.last_name
-    FROM submissions s
-    JOIN users u
-      ON u.id = s.user_id
-    WHERE s.status = 'pending'
-    ORDER BY s.created_at ASC
-    LIMIT 20
-  `;
+  const rows =
+    await db.sql`
+      SELECT
+        s.*,
+        u.username,
+        u.first_name,
+        u.last_name
+      FROM submissions s
+      JOIN users u
+        ON u.id = s.user_id
+      WHERE s.status = 'pending'
+      ORDER BY s.created_at ASC
+      LIMIT 20
+    `;
 
   if (!rows.length) {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
       "⏳ Tidak ada submission pending.",
       {
-        reply_markup: kb.adminKeyboard()
+        reply_markup:
+          adminKeyboard()
       }
     );
   }
 
   for (const row of rows) {
-    const userName = [
+    const task =
+      getTask(row.task_id);
+
+    const name = [
       row.first_name,
       row.last_name
     ].filter(Boolean).join(" ") || "User";
 
-    const task = TASKS.find(function(item) {
-      return item.id === row.task_id;
-    });
-
     const text = [
-      "📥 SUBMISSION #" + row.id,
+      "📥 SUBMISSION #" +
+        row.id,
       "",
-      "👤 " + userName,
-      "🔗 " + (
-        row.username
-          ? "@" + row.username
-          : "-"
-      ),
-      "🆔 User ID: " + row.user_id,
-      "📋 Task: " + (
-        task
-          ? task.title
-          : row.task_id
-      ),
-      "📎 Tipe: " + (
-        row.proof_type || "-"
-      ),
+      "👤 Nama: " +
+        name,
+      "🔗 Username: " +
+        (
+          row.username
+            ? "@" + row.username
+            : "-"
+        ),
+      "🆔 User ID: " +
+        row.user_id,
+      "",
+      "📋 Task: " +
+        (
+          task
+            ? task.title
+            : row.task_id
+        ),
+      "🎁 Reward: +" +
+        (
+          task
+            ? task.reward
+            : 0
+        ),
+      "📎 Tipe: " +
+        (
+          row.proof_type || "-"
+        ),
       "",
       row.proof_text
         ? "📝 " + row.proof_text
         : ""
     ].join("\n");
 
-    await tg.sendMessage(
+    await sendMessage(
       chatId,
       text,
       {
-        reply_markup: tg.keyboard([
-          [
-            {
-              text: "✅ APPROVE",
-              callback_data: "approve:" + row.id
-            },
-            {
-              text: "❌ REJECT",
-              callback_data: "reject:" + row.id
-            }
-          ]
-        ])
+        reply_markup:
+          keyboard([
+            [
+              {
+                text: "✅ APPROVE",
+                callback_data:
+                  "approve:" +
+                  row.id
+              },
+              {
+                text: "❌ REJECT",
+                callback_data:
+                  "reject:" +
+                  row.id
+              }
+            ]
+          ])
       }
     );
 
-    if (row.proof_file_id) {
-      try {
-        if (row.proof_type === "photo") {
-          await tg.sendPhoto(
-            chatId,
-            row.proof_file_id,
-            "📎 Bukti #" + row.id
-          );
-        }
-
-        if (row.proof_type === "video") {
-          await tg.tg(
-            "sendVideo",
-            {
-              chat_id: chatId,
-              video: row.proof_file_id,
-              caption: "📎 Bukti #" + row.id
-            }
-          );
-        }
-
-        if (row.proof_type === "document") {
-          await tg.sendDocument(
-            chatId,
-            row.proof_file_id,
-            "📎 Bukti #" + row.id
-          );
-        }
-      } catch (error) {
-        console.error(
-          "SEND PENDING PROOF ERROR:",
-          error
+    try {
+      if (
+        row.proof_type === "photo" &&
+        row.proof_file_id
+      ) {
+        await sendPhoto(
+          chatId,
+          row.proof_file_id,
+          "📎 Bukti #" + row.id
         );
       }
+
+      if (
+        row.proof_type === "video" &&
+        row.proof_file_id
+      ) {
+        await tg(
+          "sendVideo",
+          {
+            chat_id: chatId,
+            video: row.proof_file_id,
+            caption:
+              "📎 Bukti #" + row.id
+          }
+        );
+      }
+
+      if (
+        row.proof_type === "document" &&
+        row.proof_file_id
+      ) {
+        await sendDocument(
+          chatId,
+          row.proof_file_id,
+          "📎 Bukti #" + row.id
+        );
+      }
+    } catch (error) {
+      console.error(
+        "SEND PENDING PROOF ERROR:",
+        error
+      );
     }
   }
 
-  return tg.sendMessage(
+  return sendMessage(
     chatId,
     "👑 Admin Panel",
     {
-      reply_markup: kb.adminKeyboard()
+      reply_markup:
+        adminKeyboard()
     }
   );
 }
 
-async function approve(id, adminChatId) {
-  const submission = await db.approveSubmission(
-    id,
-    "Approved by admin"
-  );
+/*
+|--------------------------------------------------------------------------
+| APPROVE
+|--------------------------------------------------------------------------
+*/
+
+async function approveSubmission(
+  submissionId,
+  adminChatId
+) {
+  const submission =
+    await db.approveSubmission(
+      submissionId,
+      "Approved by admin"
+    );
 
   if (!submission) {
-    return tg.sendMessage(
+    return sendMessage(
       adminChatId,
       "⚠️ Submission sudah diproses atau tidak ditemukan."
     );
   }
 
+  const task =
+    getTask(submission.task_id);
+
   try {
-    await tg.sendMessage(
+    await sendMessage(
       submission.user_id,
       [
         "✅ BUKTI DISETUJUI",
         "",
-        "Task: " + submission.task_id,
+        "Task: " +
+          (
+            task
+              ? task.title
+              : submission.task_id
+          ),
         "",
-        "🎁 Reward sudah ditambahkan ke saldo kamu."
+        "🎁 Reward: +" +
+          (
+            task
+              ? task.reward
+              : 0
+          ),
+        "",
+        "Reward sudah ditambahkan ke saldo kamu."
       ].join("\n")
     );
   } catch (error) {
@@ -533,36 +793,55 @@ async function approve(id, adminChatId) {
     );
   }
 
-  return tg.sendMessage(
+  return sendMessage(
     adminChatId,
     "✅ Submission #" +
-    submission.id +
-    " berhasil di-approve."
+      submission.id +
+      " berhasil di-approve."
   );
 }
 
-async function reject(id, adminChatId) {
-  const submission = await db.rejectSubmission(
-    id,
-    "Rejected by admin"
-  );
+/*
+|--------------------------------------------------------------------------
+| REJECT
+|--------------------------------------------------------------------------
+*/
+
+async function rejectSubmission(
+  submissionId,
+  adminChatId
+) {
+  const submission =
+    await db.rejectSubmission(
+      submissionId,
+      "Rejected by admin"
+    );
 
   if (!submission) {
-    return tg.sendMessage(
+    return sendMessage(
       adminChatId,
       "⚠️ Submission sudah diproses atau tidak ditemukan."
     );
   }
 
+  const task =
+    getTask(submission.task_id);
+
   try {
-    await tg.sendMessage(
+    await sendMessage(
       submission.user_id,
       [
         "❌ BUKTI DITOLAK",
         "",
-        "Task: " + submission.task_id,
+        "Task: " +
+          (
+            task
+              ? task.title
+              : submission.task_id
+          ),
         "",
-        "Silakan cek kembali ketentuan task lalu kirim bukti yang lebih jelas."
+        "Silakan cek kembali ketentuan task.",
+        "Setelah itu kamu bisa mengirim bukti lagi."
       ].join("\n")
     );
   } catch (error) {
@@ -572,35 +851,58 @@ async function reject(id, adminChatId) {
     );
   }
 
-  return tg.sendMessage(
+  return sendMessage(
     adminChatId,
     "❌ Submission #" +
-    submission.id +
-    " berhasil ditolak."
+      submission.id +
+      " berhasil ditolak."
   );
 }
 
-async function showStats(chatId) {
-  const s = await db.stats();
+/*
+|--------------------------------------------------------------------------
+| STATS
+|--------------------------------------------------------------------------
+*/
 
-  return tg.sendMessage(
+async function showStats(chatId) {
+  const stats =
+    await db.stats();
+
+  return sendMessage(
     chatId,
     [
       "📊 STATISTIK",
       "",
-      "👥 Users: " + s.users,
-      "⏳ Pending: " + s.pending,
-      "✅ Approved: " + s.approved,
-      "❌ Rejected: " + s.rejected,
-      "🎁 Total reward: " + s.rewards
+      "👥 Users: " +
+        stats.users,
+      "⏳ Pending: " +
+        stats.pending,
+      "✅ Approved: " +
+        stats.approved,
+      "❌ Rejected: " +
+        stats.rejected,
+      "🎁 Total reward: " +
+        stats.rewards
     ].join("\n"),
     {
-      reply_markup: kb.adminKeyboard()
+      reply_markup:
+        adminKeyboard()
     }
   );
 }
 
+/*
+|--------------------------------------------------------------------------
+| CALLBACK HANDLER
+|--------------------------------------------------------------------------
+*/
+
 async function callback(query) {
+  if (!query) {
+    return;
+  }
+
   const chatId =
     query.message &&
     query.message.chat
@@ -612,221 +914,329 @@ async function callback(query) {
       ? query.from.id
       : null;
 
-  const data = query.data || "";
+  const data =
+    query.data || "";
 
   if (!chatId || !userId) {
     return;
   }
 
-  await tg.answerCallbackQuery(
-    query.id
-  );
+  try {
+    await answerCallbackQuery(
+      query.id
+    );
+  } catch (error) {
+    console.error(
+      "CALLBACK ANSWER ERROR:",
+      error
+    );
+  }
 
-  const user = await db.getUser(userId);
+  const user =
+    await db.getUser(userId);
 
   if (!user) {
-    return;
+    return sendMessage(
+      chatId,
+      "Silakan kirim /start terlebih dahulu."
+    );
   }
+
+  /*
+  | HOME
+  */
 
   if (data === "home") {
-    return sendHome(chatId, user);
+    return sendHome(
+      chatId,
+      user
+    );
   }
 
+  /*
+  | TASK MENU
+  */
+
   if (data === "menu_tasks") {
-    return showTasks(chatId, user);
+    return showTasks(chatId);
   }
+
+  /*
+  | TASK DETAIL
+  */
 
   if (data.startsWith("task:")) {
     return showTask(
       chatId,
       user,
-      data.slice(5)
+      data.substring(5)
     );
   }
+
+  /*
+  | SUBMIT
+  */
 
   if (data.startsWith("submit:")) {
     return startProof(
       chatId,
       user.id,
-      data.slice(7)
+      data.substring(7)
     );
   }
 
+  /*
+  | PROFILE
+  */
+
   if (data === "menu_profile") {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
       [
         "👤 PROFIL",
         "",
-        "Nama: " + nameOf(user),
-        "Username: " + (
-          user.username
-            ? "@" + user.username
-            : "-"
-        ),
-        "User ID: " + user.id,
+        "Nama: " +
+          displayName(user),
+        "Username: " +
+          (
+            user.username
+              ? "@" + user.username
+              : "-"
+          ),
+        "🆔 User ID: " +
+          user.id,
         "",
-        "🎁 Saldo: " + (user.balance || 0)
+        "🎁 Saldo: " +
+          (user.balance || 0)
       ].join("\n"),
       {
-        reply_markup: tg.keyboard([
-          [
-            {
-              text: "🏠 MENU UTAMA",
-              callback_data: "home"
-            }
-          ]
-        ])
+        reply_markup:
+          keyboard([
+            [
+              {
+                text: "🏠 MENU UTAMA",
+                callback_data: "home"
+              }
+            ]
+          ])
       }
     );
   }
 
+  /*
+  | REWARD
+  */
+
   if (data === "menu_reward") {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
       [
         "🎁 REWARD",
         "",
-        "Saldo kamu: " + (user.balance || 0),
+        "Saldo kamu: " +
+          (user.balance || 0),
         "",
-        "Reward masuk setelah task disetujui admin."
+        "Reward diberikan setelah task disetujui admin."
       ].join("\n"),
       {
-        reply_markup: tg.keyboard([
-          [
-            {
-              text: "📋 TASK / MISI",
-              callback_data: "menu_tasks"
-            }
-          ],
-          [
-            {
-              text: "🏠 MENU UTAMA",
-              callback_data: "home"
-            }
-          ]
-        ])
+        reply_markup:
+          keyboard([
+            [
+              {
+                text: "📋 TASK / MISI",
+                callback_data: "menu_tasks"
+              }
+            ],
+            [
+              {
+                text: "🏠 MENU UTAMA",
+                callback_data: "home"
+              }
+            ]
+          ])
       }
     );
   }
+
+  /*
+  | STATUS
+  */
 
   if (data === "menu_status") {
-    const completed = await db.getCompleted(user.id);
-    const done = new Set(
-      completed.map(function(item) {
-        return item.task_id;
-      })
-    );
+    const completed =
+      await db.getCompleted(user.id);
 
-    const lines = TASKS.map(function(task) {
-      return (
-        (done.has(task.id) ? "✅ " : "⏳ ") +
-        task.title +
-        " (+" +
-        task.reward +
-        ")"
+    const completedIds =
+      new Set(
+        completed.map(function(item) {
+          return item.task_id;
+        })
       );
-    });
 
-    return tg.sendMessage(
+    const lines =
+      TASKS.map(function(task) {
+        return (
+          (
+            completedIds.has(task.id)
+              ? "✅ "
+              : "⏳ "
+          ) +
+          task.title +
+          " (+" +
+          task.reward +
+          ")"
+        );
+      });
+
+    return sendMessage(
       chatId,
-      "📊 STATUS\n\n" + lines.join("\n"),
+      [
+        "📊 STATUS",
+        "",
+        ...lines
+      ].join("\n"),
       {
-        reply_markup: tg.keyboard([
-          [
-            {
-              text: "🏠 MENU UTAMA",
-              callback_data: "home"
-            }
-          ]
-        ])
+        reply_markup:
+          keyboard([
+            [
+              {
+                text: "🏠 MENU UTAMA",
+                callback_data: "home"
+              }
+            ]
+          ])
       }
     );
   }
 
+  /*
+  | READ FIRST
+  */
+
   if (data === "menu_read") {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
       [
         "📖 READ FIRST",
         "",
         "1. Pilih task.",
         "2. Buka link task.",
-        "3. Selesaikan task.",
+        "3. Selesaikan ketentuan.",
         "4. Kirim bukti.",
-        "5. Tunggu pemeriksaan admin.",
-        "6. Reward diberikan setelah disetujui."
+        "5. Tunggu admin memeriksa.",
+        "6. Reward masuk setelah disetujui."
       ].join("\n"),
       {
-        reply_markup: tg.keyboard([
-          [
-            {
-              text: "📋 TASK / MISI",
-              callback_data: "menu_tasks"
-            }
-          ],
-          [
-            {
-              text: "🏠 MENU UTAMA",
-              callback_data: "home"
-            }
-          ]
-        ])
+        reply_markup:
+          keyboard([
+            [
+              {
+                text: "📋 TASK / MISI",
+                callback_data: "menu_tasks"
+              }
+            ],
+            [
+              {
+                text: "🏠 MENU UTAMA",
+                callback_data: "home"
+              }
+            ]
+          ])
       }
     );
   }
 
+  /*
+  | DEVELOPER
+  */
+
   if (data === "menu_developer") {
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
-      "🛠️ DEVELOPER\n\n" + DEVELOPER,
+      [
+        "🛠️ DEVELOPER",
+        "",
+        DEVELOPER
+      ].join("\n"),
       {
-        reply_markup: tg.keyboard([
-          [
-            {
-              text: "🏠 MENU UTAMA",
-              callback_data: "home"
-            }
-          ]
-        ])
+        reply_markup:
+          keyboard([
+            [
+              {
+                text: "🏠 MENU UTAMA",
+                callback_data: "home"
+              }
+            ]
+          ])
       }
     );
   }
+
+  /*
+  | ADMIN PANEL
+  */
 
   if (data === "admin_panel") {
     if (!isAdmin(userId)) {
-      return;
+      return sendMessage(
+        chatId,
+        "❌ Akses ditolak."
+      );
     }
 
     return adminPanel(chatId);
   }
 
+  /*
+  | ADMIN PENDING
+  */
+
   if (data === "admin_pending") {
     if (!isAdmin(userId)) {
-      return;
+      return sendMessage(
+        chatId,
+        "❌ Akses ditolak."
+      );
     }
 
     return adminPending(chatId);
   }
 
+  /*
+  | ADMIN STATS
+  */
+
   if (data === "admin_stats") {
     if (!isAdmin(userId)) {
-      return;
+      return sendMessage(
+        chatId,
+        "❌ Akses ditolak."
+      );
     }
 
     return showStats(chatId);
   }
 
+  /*
+  | ADMIN BROADCAST
+  */
+
   if (data === "admin_broadcast") {
     if (!isAdmin(userId)) {
-      return;
+      return sendMessage(
+        chatId,
+        "❌ Akses ditolak."
+      );
     }
 
-    sessions.set(userId, {
-      mode: "broadcast"
-    });
+    sessions.set(
+      userId,
+      {
+        mode: "broadcast"
+      }
+    );
 
-    return tg.sendMessage(
+    return sendMessage(
       chatId,
       [
         "📢 BROADCAST",
@@ -838,28 +1248,54 @@ async function callback(query) {
     );
   }
 
+  /*
+  | APPROVE
+  */
+
   if (data.startsWith("approve:")) {
     if (!isAdmin(userId)) {
-      return;
+      return sendMessage(
+        chatId,
+        "❌ Akses ditolak."
+      );
     }
 
-    return approve(
-      Number(data.slice(8)),
+    const id =
+      Number(data.substring(8));
+
+    return approveSubmission(
+      id,
       chatId
     );
   }
 
+  /*
+  | REJECT
+  */
+
   if (data.startsWith("reject:")) {
     if (!isAdmin(userId)) {
-      return;
+      return sendMessage(
+        chatId,
+        "❌ Akses ditolak."
+      );
     }
 
-    return reject(
-      Number(data.slice(7)),
+    const id =
+      Number(data.substring(7));
+
+    return rejectSubmission(
+      id,
       chatId
     );
   }
 }
+
+/*
+|--------------------------------------------------------------------------
+| BROADCAST MESSAGE
+|--------------------------------------------------------------------------
+*/
 
 async function handleBroadcast(
   chatId,
@@ -870,20 +1306,27 @@ async function handleBroadcast(
     return false;
   }
 
-  const session = sessions.get(user.id);
+  const session =
+    sessions.get(user.id);
 
-  if (!session || session.mode !== "broadcast") {
+  if (
+    !session ||
+    session.mode !== "broadcast"
+  ) {
     return false;
   }
 
-  if (message.text === "/cancel") {
+  if (
+    message.text === "/cancel"
+  ) {
     sessions.delete(user.id);
 
-    await tg.sendMessage(
+    await sendMessage(
       chatId,
       "❌ Broadcast dibatalkan.",
       {
-        reply_markup: kb.adminKeyboard()
+        reply_markup:
+          adminKeyboard()
       }
     );
 
@@ -896,9 +1339,9 @@ async function handleBroadcast(
     "";
 
   if (!text) {
-    await tg.sendMessage(
+    await sendMessage(
       chatId,
-      "⚠️ Broadcast harus berupa teks."
+      "⚠️ Broadcast harus berupa pesan teks."
     );
 
     return true;
@@ -906,14 +1349,15 @@ async function handleBroadcast(
 
   sessions.delete(user.id);
 
-  const users = await db.allUsers();
+  const users =
+    await db.allUsers();
 
   let sent = 0;
   let failed = 0;
 
   for (const row of users) {
     try {
-      await tg.sendMessage(
+      await sendMessage(
         row.id,
         text
       );
@@ -936,119 +1380,189 @@ async function handleBroadcast(
     failed
   );
 
-  await tg.sendMessage(
+  await sendMessage(
     chatId,
     [
       "📢 BROADCAST SELESAI",
       "",
-      "✅ Terkirim: " + sent,
-      "❌ Gagal: " + failed
+      "✅ Terkirim: " +
+        sent,
+      "❌ Gagal: " +
+        failed
     ].join("\n"),
     {
-      reply_markup: kb.adminKeyboard()
+      reply_markup:
+        adminKeyboard()
     }
   );
 
   return true;
 }
 
+/*
+|--------------------------------------------------------------------------
+| HANDLE MESSAGE
+|--------------------------------------------------------------------------
+*/
+
 async function handleMessage(message) {
-  if (!message || !message.from || !message.chat) {
+  if (
+    !message ||
+    !message.from ||
+    !message.chat
+  ) {
     return;
   }
 
-  const user = message.from;
+  const user =
+    message.from;
+
+  const chatId =
+    message.chat.id;
+
+  /*
+  | SAVE USER
+  */
 
   await db.upsertUser(user);
 
-  if (message.chat.type !== "private") {
+  /*
+  | PRIVATE CHAT ONLY
+  */
+
+  if (
+    message.chat.type !== "private"
+  ) {
     return;
   }
+
+  /*
+  | BROADCAST
+  */
 
   if (
     await handleBroadcast(
-      message.chat.id,
+      chatId,
       user,
       message
     )
   ) {
     return;
   }
+
+  /*
+  | PROOF
+  */
+
+  const proofSession =
+    sessions.get(user.id);
 
   if (
+    proofSession &&
+    proofSession.mode === "proof"
+  ) {
     await handleProof(
-      message.chat.id,
+      chatId,
       user,
       message
-    )
-  ) {
+    );
+
     return;
   }
 
-  if (message.text === "/start") {
-    const saved = await db.getUser(user.id);
+  /*
+  | START
+  */
+
+  if (
+    message.text === "/start"
+  ) {
+    const savedUser =
+      await db.getUser(user.id);
 
     return sendStart(
-      message.chat.id,
-      saved || user
+      chatId,
+      savedUser || user
     );
   }
 
-  if (message.text === "/cancel") {
-    return tg.sendMessage(
-      message.chat.id,
-      "Tidak ada proses yang sedang berjalan.",
+  /*
+  | CANCEL
+  */
+
+  if (
+    message.text === "/cancel"
+  ) {
+    sessions.delete(user.id);
+
+    return sendMessage(
+      chatId,
+      "❌ Tidak ada proses yang sedang berjalan.",
       {
-        reply_markup: kb.mainKeyboard(
-          isAdmin(user.id)
-        )
+        reply_markup:
+          mainKeyboard(
+            isAdmin(user.id)
+          )
       }
     );
   }
+
+  /*
+  | ADMIN COMMAND
+  */
 
   if (
     message.text === "/admin" &&
     isAdmin(user.id)
   ) {
-    return adminPanel(
-      message.chat.id
-    );
+    return adminPanel(chatId);
   }
 
   if (
     message.text === "/stats" &&
     isAdmin(user.id)
   ) {
-    return showStats(
-      message.chat.id
-    );
+    return showStats(chatId);
   }
 
   if (
     message.text === "/broadcast" &&
     isAdmin(user.id)
   ) {
-    sessions.set(user.id, {
-      mode: "broadcast"
-    });
+    sessions.set(
+      user.id,
+      {
+        mode: "broadcast"
+      }
+    );
 
-    return tg.sendMessage(
-      message.chat.id,
+    return sendMessage(
+      chatId,
       [
         "📢 BROADCAST",
         "",
-        "Kirim pesan broadcast sekarang.",
+        "Kirim pesan yang mau dikirim ke semua user.",
         "",
         "Ketik /cancel untuk membatalkan."
       ].join("\n")
     );
   }
 
+  /*
+  | DEFAULT
+  */
+
   return sendHome(
-    message.chat.id,
+    chatId,
     user
   );
 }
+
+/*
+|--------------------------------------------------------------------------
+| EXPORT
+|--------------------------------------------------------------------------
+*/
 
 module.exports = {
   handleMessage,
