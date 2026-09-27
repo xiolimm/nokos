@@ -1117,14 +1117,14 @@ async function callback(query) {
     return sendMessage(
       chatId,
       [
-        "📖 READ FIRST",
+        "📖 PANDUAN",
         "",
         "1. Pilih task.",
         "2. Buka link task.",
         "3. Selesaikan ketentuan.",
         "4. Kirim bukti.",
         "5. Tunggu admin memeriksa.",
-        "6. Nokos bisa di Akses setelah disetujui ya ( note: nokos hanya bisa di klaim jika udah punya 4 nokos yaaaw(⁠ ⁠◜⁠‿⁠◝⁠ ⁠)⁠♡."
+        "6. Nokos bisa di Akses setelah disetujui ya ( nokos hanya bisa di klaim jika udah punya 4 nokos yaaaw(⁠ ⁠◜⁠‿⁠◝⁠ ⁠)⁠♡""
         
       ].join("\n"),
       {
