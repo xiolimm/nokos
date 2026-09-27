@@ -70,7 +70,7 @@ function homeText(user) {
     "",
     "Halo, " + displayName(user) + " 👋",
     "",
-    "Selesaikan task yang tersedia untuk mendapatkan reward.",
+    "Selesaikan task yang tersedia untuk mendapatkan nokos.",
     "",
     "🆔 User ID: " + user.id,
     "🎁 Saldo: " + (user.balance || 0),
@@ -106,7 +106,7 @@ async function sendStart(chatId, user) {
     "Selesaikan misi yang tersedia.",
     "Kirim bukti setelah task selesai.",
     "",
-    "🎁 Reward diberikan setelah bukti disetujui admin."
+    "🎁 Nokos diberikan setelah bukti disetujui admin."
   ].join("\n");
 
   return sendVideo(
@@ -1036,7 +1036,7 @@ async function callback(query) {
         "Saldo kamu: " +
           (user.balance || 0),
         "",
-        "Reward diberikan setelah task disetujui admin."
+        "Nokos diberikan setelah task disetujui admin."
       ].join("\n"),
       {
         reply_markup:
@@ -1124,7 +1124,7 @@ async function callback(query) {
         "3. Selesaikan ketentuan.",
         "4. Kirim bukti.",
         "5. Tunggu admin memeriksa.",
-        "6. Reward masuk setelah disetujui."
+        "6. Nokos bisa di Akses setelah disetujui."
       ].join("\n"),
       {
         reply_markup:
